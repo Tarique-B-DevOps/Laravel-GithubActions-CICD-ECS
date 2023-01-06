@@ -1,0 +1,71 @@
+---
+name: "Snipe-IT CI-CD"
+on:
+  push:
+    branches: [ "prod" ]
+  workflow_dispatch:
+
+jobs:
+  cd:
+    name: "Build & Push"
+    runs-on: "ubuntu-latest"
+    steps:
+      - name: "Checkout Code"
+        uses: "actions/checkout@v2"
+
+      - name: Set Tag
+        id: vars
+        run: echo "::set-output name=tag::${GITHUB_REF#refs/*/}"
+
+      - name: Configure AWS credential
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+
+      - name: Build & Push Image to ECR
+        id: build-image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: laravel
+          IMAGE_TAG: ${{ github.event.head_commit.message }}
+        run: |
+          echo $IMAGE_TAG
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          echo "::set-output name=image::$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+
+     ## Initialize and apply terraform configurations
+     
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v1
+        with:
+          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+
+      - name: Initialize Terraform
+        run: |
+          cd terraform
+          terraform init
+          
+      - name: Validate Terraform Configurations
+        id: validate
+        run: |
+          cd terraform         
+          terraform validate -no-color
+              
+      - name: Run Terraform Plan
+        id: plan
+        run: |
+          cd terraform
+          terraform plan -no-color -input=false
+        continue-on-error: true
+
+      - name: Apply Terraform Configurations
+        run: |
+          cd terraform
+          terraform apply -auto-approve -input=false
