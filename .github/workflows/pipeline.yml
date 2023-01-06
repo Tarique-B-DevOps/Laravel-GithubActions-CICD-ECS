@@ -2,7 +2,7 @@
 name: "Snipe-IT CI-CD"
 on:
   push:
-    branches: [ "prod" ]
+    branches: [ "main" ]
   workflow_dispatch:
 
 jobs:
